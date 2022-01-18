@@ -102,6 +102,23 @@ void cPawn::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 		return;
 	}
 	HandleFalling();
+
+	// Handle item pickup
+	if (m_Health > 0)
+	{
+		if (IsPlayer())
+		{
+			m_World->CollectPickupsByEntity(*this);
+		}
+		else if (IsMob())
+		{
+			cMonster & Mob = static_cast<cMonster &>(*this);
+			if (Mob.CanPickUpLoot())
+			{
+				m_World->CollectPickupsByEntity(*this);
+			}
+		}
+	}
 }
 
 
@@ -307,7 +324,6 @@ void cPawn::HandleFalling(void)
 
 	/* We initialize these with what the foot is really IN, because for sampling we will move down with the epsilon above */
 	bool IsFootInWater = IsBlockWater(BlockAtFoot);
-	bool IsFootInLiquid = IsFootInWater || IsBlockLava(BlockAtFoot) || (BlockAtFoot == E_BLOCK_COBWEB);  // okay so cobweb is not _technically_ a liquid...
 	bool IsFootOnSlimeBlock = false;
 
 	/* The "cross" we sample around to account for the player width/girth */
@@ -360,7 +376,6 @@ void cPawn::HandleFalling(void)
 			if (j == 0)
 			{
 				IsFootInWater |= IsBlockWater(BlockType);
-				IsFootInLiquid |= IsFootInWater || IsBlockLava(BlockType) || (BlockType == E_BLOCK_COBWEB);  // okay so cobweb is not _technically_ a liquid...
 				IsFootOnSlimeBlock |= (BlockType == E_BLOCK_SLIME_BLOCK);
 			}
 
