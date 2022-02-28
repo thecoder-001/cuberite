@@ -459,6 +459,10 @@ void cClientHandle::FinishAuthenticate()
 	// Return a server login packet:
 	m_Protocol->SendLogin(*m_Player, *World);
 
+	// Send the player's permission level.
+	// The key effect is to allow 1.9+ clients to open the command block UI.
+	SendPlayerPermissionLevel();
+
 	if (m_Player->GetKnownRecipes().empty())
 	{
 		SendInitRecipes(0);
@@ -1042,7 +1046,7 @@ void cClientHandle::HandleCommandBlockBlockChange(int a_BlockX, int a_BlockY, in
 		return;
 	}
 
-	if ((m_Player == nullptr) || !m_Player->HasPermission("comandblock.set"))
+	if ((m_Player == nullptr) || !m_Player->HasPermission("cuberite.commandblock.set"))
 	{
 		SendChat("You cannot edit command blocks on this server", mtFailure);
 		return;
@@ -1129,12 +1133,12 @@ void cClientHandle::HandleLeftClick(int a_BlockX, int a_BlockY, int a_BlockZ, eB
 		}
 
 		if (
-			((Diff(m_Player->GetPosX(), static_cast<double>(a_BlockX)) > 6) ||
+			(Diff(m_Player->GetPosX(), static_cast<double>(a_BlockX)) > 6) ||
 			(Diff(m_Player->GetPosY(), static_cast<double>(a_BlockY)) > 6) ||
-			(Diff(m_Player->GetPosZ(), static_cast<double>(a_BlockZ)) > 6))
+			(Diff(m_Player->GetPosZ(), static_cast<double>(a_BlockZ)) > 6)
 		)
 		{
-			m_Player->GetWorld()->SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, *m_Player);
+			m_Player->SendBlocksAround(a_BlockX, a_BlockY, a_BlockZ, 2);
 			return;
 		}
 	}
@@ -1143,7 +1147,7 @@ void cClientHandle::HandleLeftClick(int a_BlockX, int a_BlockY, int a_BlockZ, eB
 	if (m_Player->IsFrozen() || PlgMgr->CallHookPlayerLeftClick(*m_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, static_cast<char>(a_Status)))
 	{
 		// A plugin doesn't agree with the action, replace the block on the client and quit:
-		m_Player->GetWorld()->SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, *m_Player);
+		m_Player->SendBlocksAround(a_BlockX, a_BlockY, a_BlockZ, 2);
 		SendPlayerPosition();  // Prevents the player from falling through the block that was temporarily broken client side.
 		return;
 	}
@@ -1284,7 +1288,7 @@ void cClientHandle::HandleBlockDigStarted(int a_BlockX, int a_BlockY, int a_Bloc
 		(Diff(m_Player->GetPosZ(), static_cast<double>(a_BlockZ)) > 6)
 	)
 	{
-		m_Player->GetWorld()->SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, *m_Player);
+		m_Player->SendBlocksAround(a_BlockX, a_BlockY, a_BlockZ, 2);
 		return;
 	}
 
@@ -1361,8 +1365,7 @@ void cClientHandle::HandleBlockDigFinished(int a_BlockX, int a_BlockY, int a_Blo
 		{
 			LOGD("Break progress of player %s was less than expected: %f < %f\n", m_Player->GetName().c_str(), m_BreakProgress * 100, FASTBREAK_PERCENTAGE * 100);
 			// AntiFastBreak doesn't agree with the breaking. Bail out. Send the block back to the client, so that it knows:
-			m_Player->GetWorld()->SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, *m_Player);
-			m_Player->GetWorld()->SendBlockTo(a_BlockX, a_BlockY + 1, a_BlockZ, *m_Player);  // Strange bug with doors
+			m_Player->SendBlocksAround(a_BlockX, a_BlockY, a_BlockZ, 2);
 			SendPlayerPosition();  // Prevents the player from falling through the block that was temporarily broken client side.
 			m_Player->SendMessage("FastBreak?");  // TODO Anticheat hook
 			return;
@@ -1374,8 +1377,7 @@ void cClientHandle::HandleBlockDigFinished(int a_BlockX, int a_BlockY, int a_Blo
 	if (cRoot::Get()->GetPluginManager()->CallHookPlayerBreakingBlock(*m_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, DugBlock, DugMeta))
 	{
 		// A plugin doesn't agree with the breaking. Bail out. Send the block back to the client, so that it knows:
-		m_Player->GetWorld()->SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, *m_Player);
-		m_Player->GetWorld()->SendBlockTo(a_BlockX, a_BlockY + 1, a_BlockZ, *m_Player);  // Strange bug with doors
+		m_Player->SendBlocksAround(a_BlockX, a_BlockY, a_BlockZ, 2);
 		SendPlayerPosition();  // Prevents the player from falling through the block that was temporarily broken client side.
 		return;
 	}
@@ -1494,10 +1496,11 @@ void cClientHandle::HandleRightClick(int a_BlockX, int a_BlockY, int a_BlockZ, e
 
 		const auto & ItemHandler = HeldItem.GetHandler();
 		const auto & BlockHandler = cBlockHandler::For(BlockType);
-		const bool Placeable = ItemHandler.IsPlaceable() && !m_Player->IsGameModeAdventure() && !m_Player->IsGameModeSpectator();
-		const bool BlockUsable = BlockHandler.IsUseable() && (!m_Player->IsGameModeSpectator() || cBlockInfo::IsUseableBySpectator(BlockType));
+		const bool BlockUsable = BlockHandler.IsUseable() && (m_Player->IsGameModeSpectator() ? cBlockInfo::IsUseableBySpectator(BlockType) : !(m_Player->IsCrouched() && !HeldItem.IsEmpty()));
+		const bool ItemPlaceable = ItemHandler.IsPlaceable() && !m_Player->IsGameModeAdventure() && !m_Player->IsGameModeSpectator();
+		const bool ItemUseable = !m_Player->IsGameModeSpectator();
 
-		if (BlockUsable && !(m_Player->IsCrouched() && !HeldItem.IsEmpty()))
+		if (BlockUsable)
 		{
 			cChunkInterface ChunkInterface(World->GetChunkMap());
 			if (!PlgMgr->CallHookPlayerUsingBlock(*m_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ, BlockType, BlockMeta))
@@ -1509,8 +1512,8 @@ void cClientHandle::HandleRightClick(int a_BlockX, int a_BlockY, int a_BlockZ, e
 					return;  // Block use was successful, we're done.
 				}
 
-				// Check if the item is place able, for example a torch on a fence:
-				if (Placeable)
+				// If block use failed, fall back to placement:
+				if (ItemPlaceable)
 				{
 					// Place a block:
 					ItemHandler.OnPlayerPlace(*m_Player, HeldItem, ClickedPosition, BlockType, BlockMeta, a_BlockFace, CursorPosition);
@@ -1519,7 +1522,7 @@ void cClientHandle::HandleRightClick(int a_BlockX, int a_BlockY, int a_BlockZ, e
 				return;
 			}
 		}
-		else if (Placeable)
+		else if (ItemPlaceable)
 		{
 			// TODO: Double check that we don't need this for using item and for packet out of range
 			m_NumBlockChangeInteractionsThisTick++;
@@ -1533,14 +1536,22 @@ void cClientHandle::HandleRightClick(int a_BlockX, int a_BlockY, int a_BlockZ, e
 			ItemHandler.OnPlayerPlace(*m_Player, HeldItem, ClickedPosition, BlockType, BlockMeta, a_BlockFace, CursorPosition);
 			return;
 		}
-		else if (!PlgMgr->CallHookPlayerUsingItem(*m_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ))
+		else if (ItemUseable)
 		{
-			// All plugins agree with using the item.
-			// Use an item in hand with a target block.
+			if (!PlgMgr->CallHookPlayerUsingItem(*m_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ))
+			{
+				// All plugins agree with using the item.
+				// Use an item in hand with a target block.
 
-			cBlockInServerPluginInterface PluginInterface(*World);
-			ItemHandler.OnItemUse(World, m_Player, PluginInterface, HeldItem, ClickedPosition, a_BlockFace);
-			PlgMgr->CallHookPlayerUsedItem(*m_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ);
+				cBlockInServerPluginInterface PluginInterface(*World);
+				ItemHandler.OnItemUse(World, m_Player, PluginInterface, HeldItem, ClickedPosition, a_BlockFace);
+				PlgMgr->CallHookPlayerUsedItem(*m_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ);
+				return;
+			}
+		}
+		else
+		{
+			// (x) None of the above.
 			return;
 		}
 	}
@@ -1589,7 +1600,7 @@ void cClientHandle::HandleChat(const AString & a_Message)
 	Msg.AddTextPart(m_Player->GetName(), Color);
 	Msg.ParseText(m_Player->GetSuffix());
 	Msg.AddTextPart("> ");
-	if (m_Player->HasPermission("chat.format"))
+	if (m_Player->HasPermission("cuberite.chat.format"))
 	{
 		Msg.ParseText(Message);
 	}
@@ -2874,6 +2885,15 @@ void cClientHandle::SendPlayerMoveLook(void)
 	);
 	*/
 	m_Protocol->SendPlayerMoveLook();
+}
+
+
+
+
+
+void cClientHandle::SendPlayerPermissionLevel()
+{
+	m_Protocol->SendPlayerPermissionLevel();
 }
 
 

@@ -170,6 +170,17 @@ cPlayer::~cPlayer(void)
 
 
 
+void cPlayer::OnLoseSpectated()
+{
+	m_ClientHandle->SendCameraSetTo(*this);
+	m_ClientHandle->SendPlayerMoveLook();
+	m_Spectating = nullptr;
+}
+
+
+
+
+
 int cPlayer::CalcLevelFromXp(int a_XpTotal)
 {
 	// level 0 to 15
@@ -1304,18 +1315,23 @@ void cPlayer::SetGameMode(eGameMode a_GameMode)
 
 	if (m_GameMode == a_GameMode)
 	{
-		// Gamemode already set
+		// New gamemode unchanged, we're done:
 		return;
-	}
-
-	// Detach, if the player is switching from or to the spectator mode
-	if ((m_GameMode == gmSpectator) || (a_GameMode == gmSpectator))
-	{
-		Detach();
 	}
 
 	m_GameMode = a_GameMode;
 	UpdateCapabilities();
+
+	if (IsGameModeSpectator())
+	{
+		// Spectators cannot ride entities:
+		Detach();
+	}
+	else
+	{
+		// Non-spectators may not spectate:
+		SpectateEntity(nullptr);
+	}
 
 	m_ClientHandle->SendGameMode(a_GameMode);
 	m_ClientHandle->SendInventorySlot(-1, -1, m_DraggingItem);
@@ -1452,7 +1468,7 @@ void cPlayer::SendRotation(double a_YawDegrees, double a_PitchDegrees)
 
 
 
-void cPlayer::SpectateEntity(const cEntity * a_Target)
+void cPlayer::SpectateEntity(cEntity * a_Target)
 {
 	if (a_Target == this)
 	{
@@ -1468,13 +1484,13 @@ void cPlayer::SpectateEntity(const cEntity * a_Target)
 
 	if (a_Target == nullptr)
 	{
-		m_ClientHandle->SendCameraSetTo(*this);
-		m_ClientHandle->SendPlayerMoveLook();
-		m_Spectating = nullptr;
+		m_Spectating->OnLoseSpectator(*this);
+		OnLoseSpectated();
 		return;
 	}
 
 	m_Spectating = a_Target;
+	a_Target->OnAcquireSpectator(*this);
 	m_ClientHandle->SendCameraSetTo(*a_Target);
 }
 
@@ -1567,7 +1583,7 @@ void cPlayer::PermuteEnchantmentSeed()
 
 
 
-bool cPlayer::HasPermission(const AString & a_Permission)
+bool cPlayer::HasPermission(const AString & a_Permission) const
 {
 	if (a_Permission.empty())
 	{
@@ -1786,7 +1802,7 @@ void cPlayer::TossPickup(const cItem & a_Item)
 
 void cPlayer::LoadFromDisk()
 {
-	LoadRank();
+	RefreshRank();
 
 	Json::Value Root;
 	const auto & UUID = GetUUID();
@@ -2295,39 +2311,11 @@ void cPlayer::UpdateMovementStats(const Vector3d & a_DeltaPos, bool a_PreviousIs
 
 void cPlayer::LoadRank(void)
 {
-	const auto & UUID = GetUUID();
-	cRankManager * RankMgr = cRoot::Get()->GetRankManager();
+	// Update our permissions:
+	RefreshRank();
 
-	// Load the values from cRankManager:
-	m_Rank = RankMgr->GetPlayerRankName(UUID);
-	if (m_Rank.empty())
-	{
-		m_Rank = RankMgr->GetDefaultRank();
-	}
-	else
-	{
-		// Update the name:
-		RankMgr->UpdatePlayerName(UUID, GetName());
-	}
-	m_Permissions = RankMgr->GetPlayerPermissions(UUID);
-	m_Restrictions = RankMgr->GetPlayerRestrictions(UUID);
-	RankMgr->GetRankVisuals(m_Rank, m_MsgPrefix, m_MsgSuffix, m_MsgNameColorCode);
-
-	// Break up the individual permissions on each dot, into m_SplitPermissions:
-	m_SplitPermissions.clear();
-	m_SplitPermissions.reserve(m_Permissions.size());
-	for (auto & Permission: m_Permissions)
-	{
-		m_SplitPermissions.push_back(StringSplit(Permission, "."));
-	}  // for Permission - m_Permissions[]
-
-	// Break up the individual restrictions on each dot, into m_SplitRestrictions:
-	m_SplitRestrictions.clear();
-	m_SplitRestrictions.reserve(m_Restrictions.size());
-	for (auto & Restriction: m_Restrictions)
-	{
-		m_SplitRestrictions.push_back(StringSplit(Restriction, "."));
-	}  // for itr - m_Restrictions[]
+	// Send a permission level update:
+	m_ClientHandle->SendPlayerPermissionLevel();
 }
 
 
@@ -2808,6 +2796,47 @@ void cPlayer::TickFreezeCode()
 
 
 
+void cPlayer::RefreshRank()
+{
+	const auto & UUID = GetUUID();
+	cRankManager * RankMgr = cRoot::Get()->GetRankManager();
+
+	// Load the values from cRankManager:
+	m_Rank = RankMgr->GetPlayerRankName(UUID);
+	if (m_Rank.empty())
+	{
+		m_Rank = RankMgr->GetDefaultRank();
+	}
+	else
+	{
+		// Update the name:
+		RankMgr->UpdatePlayerName(UUID, GetName());
+	}
+	m_Permissions = RankMgr->GetPlayerPermissions(UUID);
+	m_Restrictions = RankMgr->GetPlayerRestrictions(UUID);
+	RankMgr->GetRankVisuals(m_Rank, m_MsgPrefix, m_MsgSuffix, m_MsgNameColorCode);
+
+	// Break up the individual permissions on each dot, into m_SplitPermissions:
+	m_SplitPermissions.clear();
+	m_SplitPermissions.reserve(m_Permissions.size());
+	for (auto & Permission : m_Permissions)
+	{
+		m_SplitPermissions.push_back(StringSplit(Permission, "."));
+	}
+
+	// Break up the individual restrictions on each dot, into m_SplitRestrictions:
+	m_SplitRestrictions.clear();
+	m_SplitRestrictions.reserve(m_Restrictions.size());
+	for (auto & Restriction : m_Restrictions)
+	{
+		m_SplitRestrictions.push_back(StringSplit(Restriction, "."));
+	}
+}
+
+
+
+
+
 void cPlayer::ApplyArmorDamage(int a_DamageBlocked)
 {
 	short ArmorDamage = static_cast<short>(std::max(a_DamageBlocked / 4, 1));
@@ -3041,6 +3070,9 @@ void cPlayer::OnRemoveFromWorld(cWorld & a_World)
 
 	// Remove any references to this player pointer by windows in the old world:
 	CloseWindow(false);
+
+	// Stop spectation and remove our reference from the spectated:
+	SpectateEntity(nullptr);
 
 	// Remove the client handle from the world:
 	m_World->RemoveClientFromChunks(m_ClientHandle.get());
