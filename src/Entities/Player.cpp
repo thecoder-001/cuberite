@@ -2192,7 +2192,7 @@ bool cPlayer::IsClimbing(void) const
 {
 	const auto Position = GetPosition().Floor();
 
-	if (!cChunkDef::IsValidHeight(Position.y))
+	if (!cChunkDef::IsValidHeight(Position))
 	{
 		return false;
 	}
@@ -2322,15 +2322,15 @@ void cPlayer::LoadRank(void)
 
 
 
-void cPlayer::SendBlocksAround(int a_BlockX, int a_BlockY, int a_BlockZ, int a_Range)
+void cPlayer::SendBlocksAround(Vector3i a_BlockPos, int a_Range)
 {
 	// Collect the coords of all the blocks to send:
 	sSetBlockVector blks;
-	for (int y = a_BlockY - a_Range + 1; y < a_BlockY + a_Range; y++)
+	for (int y = a_BlockPos.y - a_Range + 1; y < a_BlockPos.y + a_Range; y++)
 	{
-		for (int z = a_BlockZ - a_Range + 1; z < a_BlockZ + a_Range; z++)
+		for (int z = a_BlockPos.z - a_Range + 1; z < a_BlockPos.z + a_Range; z++)
 		{
-			for (int x = a_BlockX - a_Range + 1; x < a_BlockX + a_Range; x++)
+			for (int x = a_BlockPos.x - a_Range + 1; x < a_BlockPos.x + a_Range; x++)
 			{
 				blks.emplace_back(x, y, z, E_BLOCK_AIR, static_cast<NIBBLETYPE>(0));  // Use fake blocktype, it will get set later on.
 			}
@@ -2377,8 +2377,8 @@ bool cPlayer::DoesPlacingBlocksIntersectEntity(const std::initializer_list<sSetB
 		cBoundingBox BlockBox = cBlockHandler::For(blk.m_BlockType).GetPlacementCollisionBox(
 			m_World->GetBlock({ x - 1, y, z }),
 			m_World->GetBlock({ x + 1, y, z }),
-			(y == 0) ? E_BLOCK_AIR : m_World->GetBlock({ x, y - 1, z }),
-			(y == cChunkDef::Height - 1) ? E_BLOCK_AIR : m_World->GetBlock({ x, y + 1, z }),
+			(y == 0) ? static_cast<BLOCKTYPE>(E_BLOCK_AIR) : m_World->GetBlock({ x, y - 1, z }),
+			(y == cChunkDef::Height - 1) ? static_cast<BLOCKTYPE>(E_BLOCK_AIR) : m_World->GetBlock({ x, y + 1, z }),
 			m_World->GetBlock({ x, y, z - 1 }),
 			m_World->GetBlock({ x, y, z + 1 })
 		);
@@ -2577,9 +2577,17 @@ float cPlayer::GetLiquidHeightPercent(NIBBLETYPE a_Meta)
 
 bool cPlayer::IsInsideWater()
 {
+	const auto EyePos = GetEyePosition().Floor();
+
+	if (!cChunkDef::IsValidHeight(EyePos))
+	{
+		// Not in water if in void.
+		return false;
+	}
+
 	BLOCKTYPE Block;
 	NIBBLETYPE Meta;
-	m_World->GetBlockTypeMeta(GetEyePosition().Floor(), Block, Meta);
+	m_World->GetBlockTypeMeta(EyePos, Block, Meta);
 
 	if ((Block != E_BLOCK_WATER) && (Block != E_BLOCK_STATIONARY_WATER))
 	{
