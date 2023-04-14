@@ -684,21 +684,6 @@ void cChunk::SpawnMobs(cMobSpawner & a_MobSpawner)
 
 void cChunk::Tick(std::chrono::milliseconds a_Dt)
 {
-	const auto ShouldTick = ShouldBeTicked();
-
-	// If we are not valid, tick players and bailout
-	if (!ShouldTick)
-	{
-		for (const auto & Entity : m_Entities)
-		{
-			if (Entity->IsPlayer())
-			{
-				Entity->Tick(a_Dt, *this);
-			}
-		}
-		return;
-	}
-
 	TickBlocks();
 
 	// Tick all block entities in this chunk:
@@ -1994,4 +1979,13 @@ NIBBLETYPE cChunk::GetTimeAlteredLight(NIBBLETYPE a_Skylight) const
 	a_Skylight -= m_World->GetSkyDarkness();
 	// Because NIBBLETYPE is unsigned, we clamp it to 0 .. 15 by checking for values above 15
 	return (a_Skylight < 16)? a_Skylight : 0;
+}
+
+
+
+
+
+bool cChunk::IsSlimeChunk() const
+{
+	return m_World->IsSlimeChunk(m_PosX, m_PosZ);
 }

@@ -1033,6 +1033,7 @@ void cWorld::Tick(std::chrono::milliseconds a_Dt, std::chrono::milliseconds a_La
 		Player->GetClientHandle()->ProcessProtocolIn();
 	}
 
+	TickClients(a_Dt);
 	TickQueuedChunkDataSets();
 	TickQueuedBlocks();
 	m_ChunkMap.Tick(a_Dt);
@@ -1065,6 +1066,18 @@ void cWorld::Tick(std::chrono::milliseconds a_Dt, std::chrono::milliseconds a_La
 			// Save if we have too many dirty unused chunks
 			SaveAllChunks();
 		}
+	}
+}
+
+
+
+
+
+void cWorld::TickClients(const std::chrono::milliseconds a_Dt)
+{
+	for (const auto Player : m_Players)
+	{
+		Player->GetClientHandle()->Tick(a_Dt);
 	}
 }
 
@@ -1382,6 +1395,7 @@ void cWorld::DoExplosionAt(double a_ExplosionSize, double a_BlockX, double a_Blo
 			case eExplosionSource::esGhastFireball:
 			case eExplosionSource::esMonster:
 			case eExplosionSource::esPrimedTNT:
+			case eExplosionSource::esTNTMinecart:
 			case eExplosionSource::esWitherBirth:
 			case eExplosionSource::esWitherSkull:
 			{
@@ -3214,4 +3228,14 @@ void cWorld::cChunkGeneratorCallbacks::CallHookChunkGenerated (cChunkDesc & a_Ch
 	cPluginManager::Get()->CallHookChunkGenerated(
 		*m_World, a_ChunkDesc.GetChunkX(), a_ChunkDesc.GetChunkZ(), &a_ChunkDesc
 	);
+}
+
+
+
+
+
+bool cWorld::IsSlimeChunk(int a_ChunkX, int a_ChunkZ) const
+{
+	cNoise Noise(GetSeed());
+	return (Noise.IntNoise2DInt(a_ChunkX, a_ChunkZ) / 8) % 10 == 0;  // 10% chance
 }

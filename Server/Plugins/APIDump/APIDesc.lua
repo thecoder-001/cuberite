@@ -2228,18 +2228,21 @@ end
 				Chaining example below for details.</p>
 				<p>
 				Each part of the composite chat message takes a "Style" parameter, this is a string that describes
-				the formatting. It uses the following strings, concatenated together:
+				the formatting. It uses the "standard" minecraft format code without the '&' symbole, concatenated
+				together:
 				<table>
 				<tr><th>String</th><th>Style</th></tr>
-				<tr><td>b</td><td>Bold text</td></tr>
-				<tr><td>i</td><td>Italic text</td></tr>
-				<tr><td>u</td><td>Underlined text</td></tr>
-				<tr><td>s</td><td>Strikethrough text</td></tr>
-				<tr><td>o</td><td>Obfuscated text</td></tr>
-				<tr><td>@X</td><td>color [0–9a–f], same as dye meta</td></tr>
+				<tr><td>l</td><td>Bold text</td></tr>
+				<tr><td>o</td><td>Italic text</td></tr>
+				<tr><td>n</td><td>Underlined text</td></tr>
+				<tr><td>m</td><td>Strikethrough text</td></tr>
+				<tr><td>k</td><td>Obfuscated text</td></tr>
+				<tr><td>r</td><td>Reset Style</td></tr>
+				<tr><td>[0-9a-f]</td><td>colors</td></tr>
 				</table>
+				You can escape the '&' character with an antislash in front of it. as follow: `I love Choco\&chips`
 				The following picture, taken from the Minecraft Wiki, illustrates the color codes:</p>
-				<img src="http://images.wikia.com/minecraft_gamepedia/images/archive/4/4c/20200824112326!Colors.png" />
+				<img src="https://static.wikia.nocookie.net/minecraft_gamepedia/images/7/7e/Minecraft_Formatting.gif/revision/latest/scale-to-width-down/292?cb=20200828001454" />
 			]],
 			Functions =
 			{
@@ -5371,6 +5374,10 @@ ValueName0=SomeOtherValue
 				The objects of this class are created empty. You need to either load a file using ReadFile(), or
 				insert values by hand. Then you can store the object's contents to a disk file using WriteFile(), or
 				just forget everything by destroying the object. Note that the file operations are quite slow.</p>
+				<p>
+				Cuberite will write the characters '\n' in place of line breaks in the values of the cIniFile when
+				it is being stored into a file. It will also replace '\n' with line breaks when it reads an INI
+				file.
 				<p>
 				For storing high-volume low-latency data, use the {{sqlite3}} class. For storing
 				hierarchically-structured data, use the XML format, using the LuaExpat parser in the {{lxp}} class.
@@ -12285,7 +12292,7 @@ end
 							Type = "cTeam",
 						},
 					},
-					Notes = "Registers a new team. Returns the {{cTeam}} instance, nil on error.",
+					Notes = "Registers a new team. Returns the {{cTeam}} instance, nil on error. For example if the team already exists.",
 				},
 				RemoveObjective =
 				{
@@ -17945,6 +17952,10 @@ end
 				esPrimedTNT =
 				{
 					Notes = "A TNT explosion. The SourceData param is the {{cTNTEntity|TNT entity}} object.",
+				},
+				esTNTMinecart =
+				{
+					Notes = "A TNT minecart explosion. The SourceData param is the {{cMinecartWithTNT|Minecart with TNT entity}} object.",
 				},
 				esWitherBirth =
 				{
